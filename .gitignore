@@ -1,0 +1,17 @@
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+bin/
+obj/
+*.user
+*.suo
+
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+.DS_Store
