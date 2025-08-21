@@ -1,0 +1,40 @@
+name: Network Deploy
+
+on:
+  push:
+    paths:
+      - "network/**"
+      - ".github/workflows/network.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/data-collection-platform-github-actions-role
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Init
+        working-directory: network
+        run: terraform init -backend-config=backend.hcl.example
+
+      - name: Plan
+        working-directory: network
+        run: terraform plan -var "environment=dev" -var "vpc_id=${{ secrets.VPC_ID }}"
+
+      - name: Apply
+        if: github.ref == 'refs/heads/main'
+        working-directory: network
+        run: terraform apply -auto-approve -var "environment=dev" -var "vpc_id=${{ secrets.VPC_ID }}"
