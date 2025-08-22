@@ -12,18 +12,14 @@ module "vpc" {
   enable_nat_gw        = var.enable_nat_gw
 }
 
-# Outputs from the VPC module
-output "vpc_id" {
-  value = module.vpc.vpc_id
+resource "aws_s3_bucket" "tf_state" {
+  bucket = "${local.name}-tfstate"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
-output "public_subnet_ids" {
-  value = module.vpc.public_subnet_ids
-}
-
-output "private_subnet_ids" {
-  value = module.vpc.private_subnet_ids
-}
 
 # Security Group (kept at network layer, not in the module)
 resource "aws_security_group" "default" {
@@ -56,8 +52,4 @@ resource "aws_security_group" "default" {
     Name        = "${var.environment}-sg"
     Environment = var.environment
   }
-}
-
-output "security_group_id" {
-  value = aws_security_group.default.id
 }

@@ -30,9 +30,14 @@ jobs:
         working-directory: network
         run: terraform init -backend-config=backend.hcl.example
 
-      - name: Plan
+      - name: Terraform Plan
         working-directory: network
-        run: terraform plan -var "environment=dev" -var "vpc_id=${{ secrets.VPC_ID }}"
+        run: |
+          terraform plan -out=tfplan -var "environment=dev" -var "vpc_id=${{ secrets.VPC_ID }}"
+
+      - name: Show Plan
+        working-directory: network
+        run: terraform show tfplan
 
       - name: Apply
         if: github.ref == 'refs/heads/main'
