@@ -1,0 +1,67 @@
+name: Terraform EKS
+
+on:
+  push:
+    paths:
+      - "eks/**"
+      - ".github/workflows/eks.yml"
+  pull_request:
+    paths:
+      - "eks/**"
+      - ".github/workflows/eks.yml"
+
+jobs:
+  validate-network-state:
+    name: Validate Network State Exists
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/data-collection-platform-github-actions-role
+          aws-region: us-east-2
+
+      - name: Check for Network State in S3
+        run: |
+          aws s3 ls s3://$STATE_BUCKET/network/prod-approval.tfstate || \
+          (echo "❌ Network state not found. Please run the network workflow first." && exit 1)
+        env:
+          STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
+
+  eks:
+    name: EKS Plan & Apply
+    runs-on: ubuntu-latest
+    needs: validate-network-state   # <-- depends on previous job
+    defaults:
+      run:
+        working-directory: eks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/data-collection-platform-github-actions-role
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init -backend-config=backend.hcl.example
+
+      - name: Terraform Plan
+        run: terraform plan -var "aws_region=us-east-1" -var "project=data-collection-platform" -var "environment=prod-approval" -out=tfplan
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve tfplan
+
+
+
+# Job 1: validate-network-state
+# Checks if network/prod-approval.tfstate exists in S3.
+# If missing, the workflow fails early with a clear message.
+# Job 2: eks
+# Runs only if the network state exists.
+# Uses that state automatically (via the remote state wiring added).
