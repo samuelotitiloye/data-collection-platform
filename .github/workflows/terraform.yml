@@ -1,17 +1,20 @@
 name: terraform
+
 on:
   pull_request:
     branches: [ "main" ]
     paths:
       - 'network/**'
+      - 'eks/**'
       - '.github/workflows/terraform.yml'
   push:
     branches: [ "main" ]
     paths:
       - 'network/**'
+      - 'eks/**'
 
 permissions:
-  id-token: write   # for GitHub OIDC
+  id-token: write
   contents: read
 
 env:
@@ -20,18 +23,35 @@ env:
   TF_CLI_ARGS: "-no-color"
 
 jobs:
-  plan:
-    name: Plan (network)
+  terraform:
+    name: ${{ matrix.dir }} (${{ github.event_name }})
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    strategy:
+      matrix:
+        dir: [ "network", "eks" ]
+      # Only run for dirs that changed in this commit/PR
+      max-parallel: 2
     defaults:
       run:
-        working-directory: network
+        working-directory: ${{ matrix.dir }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Detect changes for ${{ matrix.dir }}
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            changed:
+              - '${{ matrix.dir }}/**'
+              - '.github/workflows/terraform.yml'
+
+      - name: Skip if no changes in ${{ matrix.dir }}
+        if: steps.changes.outputs.changed != 'true'
+        run: echo "No changes in ${{ matrix.dir }}, skipping."
 
       - name: Configure AWS (OIDC)
+        if: steps.changes.outputs.changed == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
@@ -39,56 +59,41 @@ jobs:
           role-session-name: gha-${{ github.run_id }}
 
       - name: Setup Terraform
+        if: steps.changes.outputs.changed == 'true'
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.8.5
 
+      - name: Terraform Fmt Check
+        if: steps.changes.outputs.changed == 'true'
+        run: terraform fmt -check -recursive
+
       - name: Terraform Init
-        run: |
-          terraform init \
-            -backend-config=backend.hcl.example
+        if: steps.changes.outputs.changed == 'true'
+        run: terraform init -backend-config=backend.hcl.example
 
       - name: Terraform Validate
+        if: steps.changes.outputs.changed == 'true'
         run: terraform validate
 
       - name: Terraform Plan
+        if: steps.changes.outputs.changed == 'true'
         run: terraform plan -out=tfplan
 
-      - name: Upload Plan
+      # On PRs, stop after Plan (reviewers can inspect the logs)
+      - name: Upload Plan (PR only)
+        if: steps.changes.outputs.changed == 'true' && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan
-          path: network/tfplan
+          name: tfplan-${{ matrix.dir }}
+          path: ${{ matrix.dir }}/tfplan
 
-  apply:
-    name: Apply (network)
-    runs-on: ubuntu-latest
-    needs: plan
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: prod-approval   # add a required reviewer in repo settings to set a gate
-    defaults:
-      run:
-        working-directory: network
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: gha-${{ github.run_id }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.8.5
-
-      - name: Terraform Init
+      # On push to main, apply the freshly created plan in the same run
+      - name: Terraform Apply (main only)
+        if: steps.changes.outputs.changed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          # enforce a GitHub Environment approval gate
+          ACTIONS_RUNTIME_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          terraform init \
-            -backend-config=backend.hcl.example
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve
+          terraform apply -auto-approve tfplan
+          environment: prod-approval

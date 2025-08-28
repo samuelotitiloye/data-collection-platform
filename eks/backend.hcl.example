@@ -1,0 +1,5 @@
+bucket         = "<bootstrap.backend_bucket>"
+key            = "eks/${var.environment}.tfstate"
+region         = "us-east-1"
+dynamodb_table = "<bootstrap.backend_table>"
+encrypt        = true
