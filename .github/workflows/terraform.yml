@@ -21,9 +21,13 @@ env:
 
 jobs:
   terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # ✅ required for OIDC
+      contents: read   
+
     environment: prod-approval
     name: ${{ matrix.dir }} (${{ github.event_name }})
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         dir: [ "network", "eks" ]
