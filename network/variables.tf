@@ -43,5 +43,5 @@ variable "availability_zones" {
 variable "enable_nat_gw" {
   description = "Whether to create a NAT Gateway"
   type        = bool
-  default     = true
+  default     = false
 }
